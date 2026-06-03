@@ -9,6 +9,7 @@
     "checkJs": false,
     "declaration": true,
     "emitDeclarationOnly": true,
+    "rootDir": "./src",
     "outDir": "dist",
     "esModuleInterop": true,
     "resolveJsonModule": true,

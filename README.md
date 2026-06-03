@@ -160,4 +160,8 @@ Keycloak Admin → Clients → <client> → Service account roles → assign "cm
 
 ## License
 
-None - private use
+MIT © Skylab Kulübü — see [LICENSE](LICENSE).
+
+Uses [`inscribed`](https://www.npmjs.com/package/inscribed) (LGPL-3.0-or-later) as
+a peer dependency (not bundled); that license governs `inscribed` itself, not
+this adapter.
