@@ -1,0 +1,53 @@
+{
+  "name": "@skylab-kulubu/inscribed-auth",
+  "version": "0.1.0",
+  "description": "Skylab's opt-in NextAuth + Keycloak adapter (auth + service token) for the inscribed CMS.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./signin": {
+      "types": "./dist/signin.d.ts",
+      "import": "./dist/signin.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "inscribed": "^1.0.1",
+    "next": ">=14",
+    "next-auth": "^4",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "inscribed": "^1.0.1",
+    "next": ">=14",
+    "next-auth": "^4",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "tsup": "^8",
+    "typescript": "^5"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
