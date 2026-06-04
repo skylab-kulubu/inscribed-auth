@@ -97,6 +97,21 @@ can also link to it from anywhere (`<a href="/api/signin">`). **Mount it** — w
 export { GET } from "@skylab-kulubu/inscribed-auth/signin";
 ```
 
+The page shows an animated Skylab loader and, if sign-in hasn't completed after
+10 s (slow network, or a strict CSP that blocks the inline script), reveals a
+"continue to sign in" link so the user is never stuck. Its theming auto-adapts
+to light/dark (system canvas in light, a warm near-black `#1c1815` in dark).
+Being a standalone
+document it can't read your app's CSS, so pass concrete values to match:
+
+```js
+import { createSignInRoute } from "@skylab-kulubu/inscribed-auth/signin";
+
+// background/color accept any CSS value (hex, rgb, gradient); the loader and
+// text are drawn in `color`.
+export const GET = createSignInRoute({ background: "#0b1020", color: "#e5e7eb" });
+```
+
 ### `lib/cms.jsx` — the CMS page factory
 
 ```jsx
