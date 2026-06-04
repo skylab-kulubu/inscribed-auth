@@ -21,5 +21,5 @@ import {
 /** Service token for build-time `POST /cms/sync`. */
 export const getServiceToken = getClientCredentialsToken;
 
-/** Called when a sync fails - dumps Keycloak claims to explain 403s. */
-export const onSyncError = () => debugServiceTokenClaims();
+/** Called when a sync fails - probes the backend + dumps Keycloak claims. */
+export const onSyncError = (err) => debugServiceTokenClaims(err);

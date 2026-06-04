@@ -67,15 +67,26 @@ export function invalidateClientCredentialsToken() {
 }
 
 /**
- * On a sync failure, fetch the service token directly and dump the claims the
- * backend's `CmsAccessPolicy` checks (`azp`, `aud`, `resource_access`). Most
- * 403s come from the service account missing the `cms:access` role mapping in
- * Keycloak - this prints exactly what's there. Wired as `onSyncError` in the
- * `./config` entry.
+ * On a sync failure, surface the *real* reason: re-probe the backend with the
+ * service token to print the actual HTTP status + response body, then dump the
+ * Keycloak claims (`azp`, `aud`, `resource_access`) for cross-reference.
+ *
+ * The numeric status/body isn't available from `onSyncError` - inscribed catches
+ * the per-slug `CmsApiError(status, detail)`, prints only `detail`, and hands us
+ * a generic aggregate - so we re-issue one request to read it directly. The
+ * probe body carries no `slug`, so an authorized token gets a harmless 4xx
+ * validation error (nothing is created or deleted) and an unauthorized one gets
+ * 401/403. Wired as `onSyncError` in the `./config` entry.
+ *
+ * @param {unknown} [err] The aggregate error inscribed passed to `onSyncError`.
  */
-export async function debugServiceTokenClaims() {
+export async function debugServiceTokenClaims(err) {
   const { KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET, KEYCLOAK_ISSUER } = process.env;
   if (!KEYCLOAK_CLIENT_ID || !KEYCLOAK_CLIENT_SECRET || !KEYCLOAK_ISSUER) return;
+
+  if (err) {
+    console.error(`[cms-sync:debug] sync failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   const res = await fetch(`${KEYCLOAK_ISSUER}/protocol/openid-connect/token`, {
     method: "POST",
@@ -95,27 +106,42 @@ export async function debugServiceTokenClaims() {
   const [, payload] = access_token.split(".");
   const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
 
+  const cmsUrl = process.env.CMS_URL;
+  if (!cmsUrl) {
+    console.error(`[cms-sync:debug] CMS_URL is not set - skipping the backend probe.`);
+  } else {
+    const baseUrl = cmsUrl.replace(/\/+$/, "");
+    try {
+      const probe = await fetch(`${baseUrl}/cms/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${access_token}`,
+        },
+        body: JSON.stringify({ __inscribedAuthProbe: true }),
+      });
+      const body = (await probe.text()).slice(0, 500);
+      console.error(`[cms-sync:debug] POST ${baseUrl}/cms/sync -> ${probe.status} ${probe.statusText}`);
+      if (body) console.error(`  backend body: ${body}`);
+      if (probe.status === 401 || probe.status === 403) {
+        console.error(`  -> auth rejected by the backend; cross-check the token claims below.`);
+      } else {
+        console.error(`  -> token accepted (this status is validation, not auth) - a real 403 would be data/policy-specific.`);
+      }
+    } catch (e) {
+      console.error(`[cms-sync:debug] probe to ${baseUrl}/cms/sync failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   console.error("[cms-sync:debug] Service token claims:");
   console.error(`  azp:             ${claims.azp}`);
-  console.error(`  sub:             ${claims.sub}`);
   console.error(`  aud:             ${JSON.stringify(claims.aud)}`);
-  console.error(`  scope:           ${claims.scope}`);
   console.error(`  resource_access: ${JSON.stringify(claims.resource_access)}`);
 
-  // `cms:access` is a *client role* of the inscribed backend's Keycloak client
-  // (e.g. "skycms"), assigned to this service account. It therefore lands under
-  // resource_access[<backend-client>], NOT under azp (this frontend client).
-  // Scan every client so we report where the role actually is.
   const ra = claims.resource_access ?? {};
   const holder = Object.keys(ra).find((c) => ra[c]?.roles?.includes("cms:access"));
-  if (holder) {
-    console.error(`  -> "cms:access" found under resource_access["${holder}"].`);
-    if (holder !== claims.azp) {
-      console.error(`     (owned by backend client "${holder}", not azp "${claims.azp}" - expected)`);
-    }
-  } else {
-    console.error(`  ! "cms:access" role missing from every client in resource_access.`);
-    console.error(`     Assign the backend client's "cms:access" role to this service account:`);
-    console.error(`     Keycloak Admin -> Clients -> ${claims.azp} -> Service account roles -> Assign "cms:access".`);
+  if (!holder) {
+    console.error(`  ! "cms:access" missing from every client in resource_access - assign it to the`);
+    console.error(`    service account: Keycloak -> Clients -> ${claims.azp} -> Service account roles.`);
   }
 }
