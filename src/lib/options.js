@@ -9,7 +9,8 @@
  *   - JWT callback that persists Keycloak access/refresh tokens
  *   - Silent refresh of expired access tokens
  *   - Client-role extraction from the access token
- *   - Session callback that exposes `accessToken`, `user.id`, `user.clientRoles`
+ *   - Session callback that exposes `accessToken`, `user.id`, `user.clientRoles`,
+ *     `user.realmRoles`
  *
  * The OAuth provider itself stays on the consumer side - import
  * `next-auth/providers/keycloak` (or any other provider) in your own
@@ -100,6 +101,7 @@ export function createCmsAuthOptions(input) {
           next.error = undefined;
           next.idToken = account.id_token;
           next.clientRoles = readClientRoles(account.access_token);
+          next.realmRoles = readRealmRoles(account.access_token);
         } else if (
           // 2. Previous refresh failed - bail until the user re-authenticates.
           next.error !== "RefreshAccessTokenError" &&
@@ -126,6 +128,8 @@ export function createCmsAuthOptions(input) {
           session.user.id = /** @type {string} */ (token.sub ?? "");
           session.user.clientRoles =
             /** @type {string[]} */ (token.clientRoles ?? []);
+          session.user.realmRoles =
+            /** @type {string[]} */ (token.realmRoles ?? []);
         }
 
         if (extraCallbacks?.session) {
@@ -271,6 +275,30 @@ function readClientRoles(accessToken) {
 }
 
 /**
+ * Decode a Keycloak access token (JWT) and return the principal's realm roles
+ * (`realm_access.roles`). These are realm-wide roles, distinct from the
+ * per-client roles in `resource_access` that {@link readClientRoles} reads.
+ * Signature isn't verified - the token came from Keycloak directly via the
+ * OAuth flow, so trust is established.
+ *
+ * @param {string|undefined} accessToken
+ * @returns {string[]}
+ */
+function readRealmRoles(accessToken) {
+  if (!accessToken) return [];
+  const segments = accessToken.split(".");
+  if (segments.length < 2) return [];
+  try {
+    const payload = JSON.parse(
+      Buffer.from(segments[1], "base64url").toString("utf8"),
+    );
+    return payload?.realm_access?.roles ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Exchange the refresh token for a new access token at Keycloak.
  *
  * @param {*} token
@@ -299,6 +327,7 @@ async function refreshAccessToken(token) {
       refreshToken: refreshed.refresh_token ?? token.refreshToken,
       idToken: refreshed.id_token ?? token.idToken,
       clientRoles: readClientRoles(refreshed.access_token),
+      realmRoles: readRealmRoles(refreshed.access_token),
       error: undefined,
     };
   } catch (error) {

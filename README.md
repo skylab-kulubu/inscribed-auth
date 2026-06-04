@@ -11,7 +11,7 @@ It ships **two seam adapters**:
 
 | Seam | What this package provides |
 | --- | --- |
-| **Auth** | NextAuth options (JWT access/refresh persistence, silent refresh, Keycloak client-role extraction), the `withCmsAuth` adapter, the `NextAuthCmsProvider` client wrapper, and a one-route auto-signin handler. |
+| **Auth** | NextAuth options (JWT access/refresh persistence, silent refresh, Keycloak client- and realm-role extraction), the `withCmsAuth` adapter, the `NextAuthCmsProvider` client wrapper, and a one-route auto-signin handler. |
 | **Service token** | Keycloak client-credentials token for SSR content fetch + the `cms-sync` CLI. |
 
 Transport is **not** provided — Skylab uses `inscribed`'s default REST transport.
@@ -174,6 +174,28 @@ CMS_URL=https://<your-cms-host>
 | `NEXTAUTH_SECRET` | ✅ | NextAuth JWT/session secret |
 | `CMS_URL` | ✅ | inscribed backend base URL (→ `config.baseUrl`) |
 | `CMS_CDN_URL` | — | Asset CDN base (→ `config.cdnUrl`) |
+
+## Session shape
+
+`createCmsAuthOptions` augments the NextAuth session with these fields (on top of
+NextAuth's defaults):
+
+```js
+const session = await getServerSession(authOptions); // server
+// or useSession() on the client
+
+session.accessToken;        // string — the raw Keycloak access token
+session.user.id;            // string — Keycloak subject (`sub`)
+session.user.clientRoles;   // string[] — roles aggregated across every client
+                            //   in `resource_access` (includes `cms:access`)
+session.user.realmRoles;    // string[] — `realm_access.roles` (realm-wide roles)
+```
+
+Both role arrays are extracted from the access token on sign-in and re-extracted
+on every silent refresh, and default to `[]` (never `undefined`). Use
+`clientRoles` for resource-server permissions like `cms:access` (see below) and
+`realmRoles` for realm-wide roles. For admin gating specifically, prefer
+`isCmsAdmin(session, meta)` / `withCmsAuth` over checking the arrays by hand.
 
 ## Admin access
 
