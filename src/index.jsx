@@ -39,7 +39,11 @@ function Inner({ config, isAdmin, userSub, initialBlocks, onAfterSave, children 
   const { data: session } = useSession();
 
   useEffect(() => {
-    if (session?.error === "RefreshAccessTokenError") signIn();
+    // Pass the provider id explicitly. Bare `signIn()` redirects to NextAuth's
+    // provider-picker ("Sign in with Keycloak") interstitial; `signIn("keycloak")`
+    // POSTs straight into the Keycloak flow and silently re-auths while the
+    // Keycloak SSO session is still alive - no extra page, no extra click.
+    if (session?.error === "RefreshAccessTokenError") signIn("keycloak");
   }, [session?.error]);
 
   const getAccessToken = useCallback(

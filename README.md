@@ -63,6 +63,17 @@ export const authOptions = createCmsAuthOptions({
 });
 ```
 
+By default `createCmsAuthOptions` also:
+
+- sets `pages.signIn` to `/api/signin` so **every** sign-in redirect (including
+  the silent re-auth after a token refresh fails) jumps straight into Keycloak
+  instead of NextAuth's "Sign in with X" picker. Mount that route (next file)
+  for it to work, or pass `signInPage: false` to keep the built-in picker.
+- ends the Keycloak SSO session on sign-out (RP-initiated logout via
+  `id_token_hint`), so signing out of the app also signs the user out of
+  Keycloak — otherwise the next visit silently re-authenticates against the
+  still-live SSO session.
+
 ### `app/api/auth/[...nextauth]/route.js` — NextAuth handler
 
 ```js
@@ -76,7 +87,11 @@ export { handler as GET, handler as POST };
 ### `app/api/signin/route.js` — one-click sign-in
 
 `/api/signin?callbackUrl=...` jumps straight into the Keycloak flow, skipping
-NextAuth's provider-picker page. Link to it from anywhere (`<a href="/api/signin">`).
+NextAuth's provider-picker page. `createCmsAuthOptions` wires this as the default
+`pages.signIn`, so NextAuth sends unauthenticated users here automatically; you
+can also link to it from anywhere (`<a href="/api/signin">`). **Mount it** — with
+`signInPage` defaulting to `/api/signin`, sign-in 404s if this route is missing
+(or set `signInPage: false`).
 
 ```js
 export { GET } from "@skylab-kulubu/inscribed-auth/signin";

@@ -45,6 +45,11 @@ const CMS_META = Symbol.for("inscribed/auth.meta");
  *   Override admin gating with arbitrary logic. Wins over `adminRole`.
  * @property {number} [refreshLeadTimeMs]
  *   Refresh access tokens this many ms before expiry. Default 10 000.
+ * @property {string|false} [signInPage]
+ *   Path NextAuth redirects unauthenticated users to. Defaults to
+ *   `"/api/signin"` (the package's auto-submit route) so sign-in jumps straight
+ *   into Keycloak instead of NextAuth's built-in "Sign in with X" picker. Set
+ *   `false` to keep the picker.
  * @property {Partial<import("next-auth").AuthOptions["callbacks"]>} [extraCallbacks]
  *   Extra callbacks merged on top of the built-in ones. Each callback runs
  *   AFTER the built-in version and receives the already-augmented value.
@@ -64,6 +69,7 @@ export function createCmsAuthOptions(input) {
     adminRole = "cms:access",
     isAdmin,
     refreshLeadTimeMs = 10_000,
+    signInPage = "/api/signin",
     extraCallbacks,
     extraOptions,
   } = input ?? {};
@@ -92,6 +98,7 @@ export function createCmsAuthOptions(input) {
             typeof account.expires_at === "number" ? account.expires_at * 1000 : 0;
           next.sub = account.providerAccountId ?? next.sub;
           next.error = undefined;
+          next.idToken = account.id_token;
           next.clientRoles = readClientRoles(account.access_token);
         } else if (
           // 2. Previous refresh failed - bail until the user re-authenticates.
@@ -137,6 +144,24 @@ export function createCmsAuthOptions(input) {
         : {}),
     },
     ...extraOptions,
+    pages: {
+      ...(signInPage ? { signIn: signInPage } : {}),
+      ...extraOptions?.pages,
+    },
+    events: {
+      ...extraOptions?.events,
+      // Federated (RP-initiated) logout: also end the Keycloak SSO session, so
+      // the next sign-in doesn't silently re-authenticate against a still-live
+      // session. A consumer-supplied signOut (preserved by the spread above)
+      // still runs afterwards.
+      async signOut(message) {
+        const token = message && "token" in message ? message.token : null;
+        await endKeycloakSession(token?.idToken);
+        if (typeof extraOptions?.events?.signOut === "function") {
+          await extraOptions.events.signOut(message);
+        }
+      },
+    },
   };
 
   /** @type {CmsAuthMeta} */
@@ -272,6 +297,7 @@ async function refreshAccessToken(token) {
       accessToken: refreshed.access_token,
       accessTokenExpires: Date.now() + refreshed.expires_in * 1000,
       refreshToken: refreshed.refresh_token ?? token.refreshToken,
+      idToken: refreshed.id_token ?? token.idToken,
       clientRoles: readClientRoles(refreshed.access_token),
       error: undefined,
     };
@@ -283,5 +309,27 @@ async function refreshAccessToken(token) {
       accessToken: undefined,
       error: "RefreshAccessTokenError",
     };
+  }
+}
+
+/**
+ * RP-initiated (federated) logout: end the user's Keycloak SSO session so the
+ * next sign-in doesn't silently re-authenticate against a still-live session.
+ * Best-effort - the NextAuth session is already cleared by the time this runs,
+ * so a failure here just means the Keycloak session lingers until it expires.
+ *
+ * @param {string|undefined} idToken
+ */
+async function endKeycloakSession(idToken) {
+  const issuer = process.env.KEYCLOAK_ISSUER;
+  if (!idToken || !issuer) return;
+  try {
+    await fetch(
+      `${issuer}/protocol/openid-connect/logout?${new URLSearchParams({
+        id_token_hint: idToken,
+      })}`,
+    );
+  } catch {
+    /* swallow: best-effort SSO logout */
   }
 }
