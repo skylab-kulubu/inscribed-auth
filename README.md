@@ -133,7 +133,6 @@ NEXTAUTH_SECRET=<run: openssl rand -base64 32>
 CMS_URL=https://<your-cms-host>
 # Optional:
 # CMS_CDN_URL=https://<your-cdn-host>
-# NEXT_PUBLIC_CMS_URL=https://<your-cms-host>   # read by inscribed core, client-side
 ```
 
 | Var | Required | Purpose |
@@ -143,20 +142,29 @@ CMS_URL=https://<your-cms-host>
 | `KEYCLOAK_ISSUER` | ✅ | Realm issuer URL |
 | `NEXTAUTH_URL` | ✅ | App base URL for NextAuth |
 | `NEXTAUTH_SECRET` | ✅ | NextAuth JWT/session secret |
-| `CMS_URL` | ✅ | inscribed backend base URL |
-| `CMS_CDN_URL` | — | Asset CDN base (read by inscribed) |
-| `NEXT_PUBLIC_CMS_URL` | — | Client-side base URL (read by inscribed) |
+| `CMS_URL` | ✅ | inscribed backend base URL (→ `config.baseUrl`) |
+| `CMS_CDN_URL` | — | Asset CDN base (→ `config.cdnUrl`) |
 
 ## Admin access
 
 Admin operations require the `cms:access` Keycloak **client role**, both for the
-logged-in user (admin UI) and the service account (sync). If sync returns `403`,
-`onSyncError` dumps the service token's `azp` / `aud` / `resource_access` claims
-and tells you exactly which role mapping is missing:
+logged-in user (admin UI) and the service account (sync). The role belongs to
+the **inscribed backend's** Keycloak client (the resource server, e.g.
+`skycms`) — not the frontend login client (`KEYCLOAK_CLIENT_ID`). As long as the
+backend client is mapped into the token audience, the role rides along under
+`resource_access["<backend-client>"]`; the SDK reads roles from every client in
+`resource_access`, so it doesn't matter that the role isn't keyed under the
+frontend client / token `azp`.
 
-```
-Keycloak Admin → Clients → <client> → Service account roles → assign "cms:access"
-```
+Grant the backend client's `cms:access` role to each principal in Keycloak Admin:
+
+- **Admin users** → Users → \<user\> → Role mapping → assign `cms:access`
+- **Service account (sync)** → Clients → `KEYCLOAK_CLIENT_ID` → Service account
+  roles → assign `cms:access`
+
+If sync still returns `403`, `onSyncError` dumps the service token's `azp` /
+`aud` / `resource_access` claims and reports which client (if any) actually
+holds `cms:access`.
 
 ## License
 

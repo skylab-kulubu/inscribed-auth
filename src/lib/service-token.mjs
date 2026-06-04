@@ -102,10 +102,20 @@ export async function debugServiceTokenClaims() {
   console.error(`  scope:           ${claims.scope}`);
   console.error(`  resource_access: ${JSON.stringify(claims.resource_access)}`);
 
-  const ourRoles = claims.resource_access?.[claims.azp]?.roles ?? [];
-  console.error(`  -> roles for "${claims.azp}": ${JSON.stringify(ourRoles)}`);
-  if (!ourRoles.includes("cms:access")) {
-    console.error(`  ! "cms:access" role missing on service account.`);
+  // `cms:access` is a *client role* of the inscribed backend's Keycloak client
+  // (e.g. "skycms"), assigned to this service account. It therefore lands under
+  // resource_access[<backend-client>], NOT under azp (this frontend client).
+  // Scan every client so we report where the role actually is.
+  const ra = claims.resource_access ?? {};
+  const holder = Object.keys(ra).find((c) => ra[c]?.roles?.includes("cms:access"));
+  if (holder) {
+    console.error(`  -> "cms:access" found under resource_access["${holder}"].`);
+    if (holder !== claims.azp) {
+      console.error(`     (owned by backend client "${holder}", not azp "${claims.azp}" - expected)`);
+    }
+  } else {
+    console.error(`  ! "cms:access" role missing from every client in resource_access.`);
+    console.error(`     Assign the backend client's "cms:access" role to this service account:`);
     console.error(`     Keycloak Admin -> Clients -> ${claims.azp} -> Service account roles -> Assign "cms:access".`);
   }
 }

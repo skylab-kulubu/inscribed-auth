@@ -76,8 +76,6 @@ export function createCmsAuthOptions(input) {
     );
   }
 
-  const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? "";
-
   /** @type {import("next-auth").AuthOptions} */
   const base = {
     providers: [provider],
@@ -94,7 +92,7 @@ export function createCmsAuthOptions(input) {
             typeof account.expires_at === "number" ? account.expires_at * 1000 : 0;
           next.sub = account.providerAccountId ?? next.sub;
           next.error = undefined;
-          next.clientRoles = readClientRoles(account.access_token, keycloakClientId);
+          next.clientRoles = readClientRoles(account.access_token);
         } else if (
           // 2. Previous refresh failed - bail until the user re-authenticates.
           next.error !== "RefreshAccessTokenError" &&
@@ -103,7 +101,7 @@ export function createCmsAuthOptions(input) {
             Date.now() >= next.accessTokenExpires - refreshLeadTimeMs)
         ) {
           // 4. Expired (or about to) - silently refresh.
-          next = await refreshAccessToken(next, keycloakClientId);
+          next = await refreshAccessToken(next);
         }
 
         if (extraCallbacks?.jwt) {
@@ -219,23 +217,29 @@ export function withCmsAuth(authOptions) {
 // ---------------------------------------------------------------------------
 
 /**
- * Decode a Keycloak access token (JWT) and return roles scoped to the
- * given client. Signature isn't verified - the token came from Keycloak
- * directly via the OAuth flow, so trust is established.
+ * Decode a Keycloak access token (JWT) and return the principal's client roles
+ * aggregated across every entry in `resource_access`. We aggregate rather than
+ * scope to a single client because the admin role (`cms:access`) is a client
+ * role of the inscribed backend's Keycloak client (e.g. "skycms"), not the
+ * frontend client the token was issued to (`azp`/`KEYCLOAK_CLIENT_ID`). That
+ * backend client only appears in `resource_access` because it's mapped into the
+ * token audience, so reading the role straight from `resource_access` is exact
+ * and needs no extra config. Signature isn't verified - the token came from
+ * Keycloak directly via the OAuth flow, so trust is established.
  *
  * @param {string|undefined} accessToken
- * @param {string} clientId
  * @returns {string[]}
  */
-function readClientRoles(accessToken, clientId) {
-  if (!accessToken || !clientId) return [];
+function readClientRoles(accessToken) {
+  if (!accessToken) return [];
   const segments = accessToken.split(".");
   if (segments.length < 2) return [];
   try {
     const payload = JSON.parse(
       Buffer.from(segments[1], "base64url").toString("utf8"),
     );
-    return payload?.resource_access?.[clientId]?.roles ?? [];
+    const resourceAccess = payload?.resource_access ?? {};
+    return Object.values(resourceAccess).flatMap((client) => client?.roles ?? []);
   } catch {
     return [];
   }
@@ -245,9 +249,8 @@ function readClientRoles(accessToken, clientId) {
  * Exchange the refresh token for a new access token at Keycloak.
  *
  * @param {*} token
- * @param {string} keycloakClientId
  */
-async function refreshAccessToken(token, keycloakClientId) {
+async function refreshAccessToken(token) {
   try {
     const issuer = process.env.KEYCLOAK_ISSUER ?? "";
     const response = await fetch(`${issuer}/protocol/openid-connect/token`, {
@@ -269,7 +272,7 @@ async function refreshAccessToken(token, keycloakClientId) {
       accessToken: refreshed.access_token,
       accessTokenExpires: Date.now() + refreshed.expires_in * 1000,
       refreshToken: refreshed.refresh_token ?? token.refreshToken,
-      clientRoles: readClientRoles(refreshed.access_token, keycloakClientId),
+      clientRoles: readClientRoles(refreshed.access_token),
       error: undefined,
     };
   } catch (error) {
