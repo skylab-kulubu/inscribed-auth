@@ -186,8 +186,8 @@ const session = await getServerSession(authOptions); // server
 
 session.accessToken;        // string — the raw Keycloak access token
 session.user.id;            // string — Keycloak subject (`sub`)
-session.user.clientRoles;   // string[] — roles aggregated across every client
-                            //   in `resource_access` (includes `cms:access`)
+session.user.clientRoles;   // string[] — roles of the Site client in `azp`
+                            //   (`resource_access[azp].roles`, includes `cms:access`)
 session.user.realmRoles;    // string[] — `realm_access.roles` (realm-wide roles)
 ```
 
@@ -199,16 +199,13 @@ on every silent refresh, and default to `[]` (never `undefined`). Use
 
 ## Admin access
 
-Admin operations require the `cms:access` Keycloak **client role**, both for the
-logged-in user (admin UI) and the service account (sync). The role belongs to
-the **inscribed backend's** Keycloak client (the resource server, e.g.
-`skycms`) — not the frontend login client (`KEYCLOAK_CLIENT_ID`). As long as the
-backend client is mapped into the token audience, the role rides along under
-`resource_access["<backend-client>"]`; the SDK reads roles from every client in
-`resource_access`, so it doesn't matter that the role isn't keyed under the
-frontend client / token `azp`.
+Admin operations require the `cms:access` Keycloak **client role** on the Site
+client the token was issued to (`azp` / `KEYCLOAK_CLIENT_ID`), both for the
+logged-in user (admin UI) and the service account (sync). `cms:access` on some
+other client in `resource_access` does not grant editor access for this site.
 
-Grant the backend client's `cms:access` role to each principal in Keycloak Admin:
+Grant that client's `cms:access` role to each principal in Keycloak Admin (or via
+group → client-role mapping):
 
 - **Admin users** → Users → \<user\> → Role mapping → assign `cms:access`
 - **Service account (sync)** → Clients → `KEYCLOAK_CLIENT_ID` → Service account

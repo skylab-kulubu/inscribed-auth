@@ -139,9 +139,10 @@ export async function debugServiceTokenClaims(err) {
   console.error(`  resource_access: ${JSON.stringify(claims.resource_access)}`);
 
   const ra = claims.resource_access ?? {};
-  const holder = Object.keys(ra).find((c) => ra[c]?.roles?.includes("cms:access"));
-  if (!holder) {
-    console.error(`  ! "cms:access" missing from every client in resource_access - assign it to the`);
-    console.error(`    service account: Keycloak -> Clients -> ${claims.azp} -> Service account roles.`);
+  const azp = claims.azp;
+  const azpRoles = (azp && ra[azp]?.roles) || [];
+  if (!azpRoles.includes("cms:access")) {
+    console.error(`  ! "cms:access" missing on azp client ${azp} - assign it to the`);
+    console.error(`    service account: Keycloak -> Clients -> ${azp} -> Service account roles.`);
   }
 }

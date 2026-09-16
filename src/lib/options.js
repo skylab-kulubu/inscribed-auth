@@ -24,6 +24,7 @@
  */
 
 import { getServerSession } from "next-auth";
+import { readClientRoles } from "./client-roles.js";
 
 /** @type {unique symbol} */
 const CMS_META = Symbol.for("inscribed/auth.meta");
@@ -244,35 +245,6 @@ export function withCmsAuth(authOptions) {
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
-
-/**
- * Decode a Keycloak access token (JWT) and return the principal's client roles
- * aggregated across every entry in `resource_access`. We aggregate rather than
- * scope to a single client because the admin role (`cms:access`) is a client
- * role of the inscribed backend's Keycloak client (e.g. "skycms"), not the
- * frontend client the token was issued to (`azp`/`KEYCLOAK_CLIENT_ID`). That
- * backend client only appears in `resource_access` because it's mapped into the
- * token audience, so reading the role straight from `resource_access` is exact
- * and needs no extra config. Signature isn't verified - the token came from
- * Keycloak directly via the OAuth flow, so trust is established.
- *
- * @param {string|undefined} accessToken
- * @returns {string[]}
- */
-function readClientRoles(accessToken) {
-  if (!accessToken) return [];
-  const segments = accessToken.split(".");
-  if (segments.length < 2) return [];
-  try {
-    const payload = JSON.parse(
-      Buffer.from(segments[1], "base64url").toString("utf8"),
-    );
-    const resourceAccess = payload?.resource_access ?? {};
-    return Object.values(resourceAccess).flatMap((client) => client?.roles ?? []);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Decode a Keycloak access token (JWT) and return the principal's realm roles

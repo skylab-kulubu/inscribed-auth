@@ -29,6 +29,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "node --test",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
